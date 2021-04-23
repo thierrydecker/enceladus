@@ -5,10 +5,19 @@ import (
 	"os/signal"
 	"runtime"
 	"sync"
+	"time"
 
+	"github.com/google/gopacket/pcap"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+type snifferConfig struct {
+	deviceName    string
+	snapLength    int32
+	timeout       time.Duration
+	statsInterval time.Duration
+}
 
 var (
 	/*
@@ -24,9 +33,25 @@ var (
 	*/
 	signals    = make(chan os.Signal, 1)
 	doneSignal = make(chan bool, 1)
+	/*
+		Capture configuration
+	*/
+	conf = snifferConfig{
+		deviceName:    "\\Device\\NPF_{E9D609AF-F749-4AFD-83CF-FADD7F780699}",
+		snapLength:    1600,
+		timeout:       pcap.BlockForever,
+		statsInterval: 2 * time.Second,
+	}
 )
 
 func main() {
+	/*
+		Setup capture
+	*/
+	handle, err := pcap.OpenLive(conf.deviceName, conf.snapLength, false, conf.timeout)
+	if err != nil {
+		panic(err)
+	}
 	/*
 		Setup application logger
 	*/
@@ -56,6 +81,9 @@ func main() {
 	go handleSignals(signals, doneSignal, l)
 	wgSignalsHandlersPending.Wait()
 	l.Info("Application: Signal handler started")
+
+	go captureStats(handle, conf.statsInterval, l)
+
 	/*
 		Application is now running
 	*/
@@ -121,9 +149,32 @@ func handleSignals(s <-chan os.Signal, d chan<- bool, l *zap.SugaredLogger) {
 	for {
 		select {
 		case s := <-s:
-			l.Debug("Signal handler: received ", s, " signal")
+			l.Debugf("Signal handler: received %v signal", s)
 			d <- true
 			return
+		default:
+			runtime.Gosched()
+		}
+	}
+}
+
+func captureStats(handle *pcap.Handle, interval time.Duration, l *zap.SugaredLogger) {
+	/*
+		Log the capture statistics
+	*/
+	ticker := time.NewTicker(interval)
+	for {
+		select {
+		case _ = <-ticker.C:
+			stats, _ := handle.Stats()
+			received := uint64(stats.PacketsReceived)
+			dropped := uint64(stats.PacketsDropped)
+			ifDropped := uint64(stats.PacketsIfDropped)
+			if dropped == 0 && ifDropped == 0 {
+				l.Infof("Statistics: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+			} else {
+				l.Warnf("Statistics: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+			}
 		default:
 			runtime.Gosched()
 		}
