@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -52,6 +53,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer handle.Close()
 	/*
 		Setup application logger
 	*/
@@ -175,6 +177,17 @@ func captureStats(handle *pcap.Handle, interval time.Duration, l *zap.SugaredLog
 			} else {
 				l.Warnf("Statistics: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
 			}
+		default:
+			runtime.Gosched()
+		}
+	}
+}
+
+func handlePacket(packets <-chan gopacket.Packet) {
+	for {
+		select {
+		case _ = <-packets:
+			runtime.Gosched()
 		default:
 			runtime.Gosched()
 		}
