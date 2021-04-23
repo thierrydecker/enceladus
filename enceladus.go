@@ -1,18 +1,97 @@
 package main
 
 import (
+	"os"
+	"os/signal"
+	"runtime"
+	"sync"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
+var (
+	/*
+		Wait groups used to synchronize starting processes
+	*/
+	wgSignalsHandlersPending = sync.WaitGroup{}
+	/*
+		Wait groups used to synchronize stopping processes
+	*/
+	wgSignalsHandlersRunning = sync.WaitGroup{}
+	/*
+		Channels used to synchronize processes activity
+	*/
+	signals    = make(chan os.Signal, 1)
+	doneSignal = make(chan bool, 1)
+)
+
 func main() {
+	/*
+		Setup application logger
+	*/
+	l, err := applicationLogger()
+	if err != nil {
+		panic(err)
+	}
+	/*
+		Flushing Zap buffers
+	*/
+	defer func(logger *zap.SugaredLogger) {
+		err := logger.Sync()
+		if err != nil {
+			panic(err)
+		}
+	}(l)
+	/*
+		Relay incoming signals to application
+	*/
+	signal.Notify(signals, os.Interrupt)
+	/*
+		Starting signal handler
+	*/
+	l.Debug("Application: starting signal handlers")
+	wgSignalsHandlersPending.Add(1)
+	wgSignalsHandlersRunning.Add(1)
+	go handleSignals(signals, doneSignal, l)
+	wgSignalsHandlersPending.Wait()
+	l.Info("Application: Signal handler started")
+	/*
+		Application is now running
+	*/
+	l.Info("Main application: running")
+	/*
+		Main loop of the application waiting for a signal to stop
+	*/
+	for {
+		select {
+		case <-doneSignal:
+			l.Info("Main application: exiting...")
+			/*
+				Stop signal handler
+			*/
+			l.Info("Main application: Stopping signal handler...")
+			wgSignalsHandlersRunning.Wait()
+			l.Info("Main application: Signal handler stopped")
+			/*
+				Application is now stopped
+			*/
+			l.Info("Main application: Stopped")
+			return
+		default:
+			runtime.Gosched()
+		}
+	}
 
 }
 
-func applicationLogger() *zap.Logger {
+func applicationLogger() (*zap.SugaredLogger, error) {
+	/*
+		applicationLogger returns an *zap.SugaredLogger used for logging across the application
+	*/
 	config := zap.Config{
 		Encoding:         "console",
-		Level:            zap.NewAtomicLevelAt(zapcore.InfoLevel),
+		Level:            zap.NewAtomicLevelAt(zapcore.DebugLevel),
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stdout"},
 		EncoderConfig: zapcore.EncoderConfig{
@@ -27,7 +106,26 @@ func applicationLogger() *zap.Logger {
 	}
 	logger, err := config.Build()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return logger
+	return logger.Sugar(), nil
+}
+
+func handleSignals(s <-chan os.Signal, d chan<- bool, l *zap.SugaredLogger) {
+	/*
+		Signal handling
+	*/
+	defer wgSignalsHandlersRunning.Done()
+	l.Debug("Signal handler: running")
+	wgSignalsHandlersPending.Done()
+	for {
+		select {
+		case s := <-s:
+			l.Debug("Signal handler: received ", s, " signal")
+			d <- true
+			return
+		default:
+			runtime.Gosched()
+		}
+	}
 }
