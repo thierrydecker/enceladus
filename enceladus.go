@@ -25,15 +25,18 @@ var (
 		Wait groups used to synchronize starting processes
 	*/
 	wgSignalsHandlersPending = sync.WaitGroup{}
+	wgCaptureStatsPending    = sync.WaitGroup{}
 	/*
 		Wait groups used to synchronize stopping processes
 	*/
 	wgSignalsHandlersRunning = sync.WaitGroup{}
+	wgCaptureStatsRunning    = sync.WaitGroup{}
 	/*
 		Channels used to synchronize processes activity
 	*/
-	signals    = make(chan os.Signal, 1)
-	doneSignal = make(chan bool, 1)
+	signals          = make(chan os.Signal, 1)
+	doneSignal       = make(chan bool, 1)
+	doneCaptureStats = make(chan bool, 1)
 	/*
 		Capture configuration
 	*/
@@ -41,7 +44,7 @@ var (
 		deviceName:    "\\Device\\NPF_{E9D609AF-F749-4AFD-83CF-FADD7F780699}",
 		snapLength:    1600,
 		timeout:       pcap.BlockForever,
-		statsInterval: 2 * time.Second,
+		statsInterval: 30 * time.Second,
 	}
 )
 
@@ -83,9 +86,15 @@ func main() {
 	go handleSignals(signals, doneSignal, l)
 	wgSignalsHandlersPending.Wait()
 	l.Info("Application: Signal handler started")
-
-	go captureStats(handle, conf.statsInterval, l)
-
+	/*
+		Starting capture statistics
+	*/
+	l.Debug("Application: starting capture statistics")
+	wgCaptureStatsPending.Add(1)
+	wgCaptureStatsRunning.Add(1)
+	go captureStats(doneCaptureStats, handle, conf.statsInterval, l)
+	wgCaptureStatsPending.Wait()
+	l.Debug("Application: Capture statistics stopped")
 	/*
 		Application is now running
 	*/
@@ -103,6 +112,25 @@ func main() {
 			l.Info("Main application: Stopping signal handler...")
 			wgSignalsHandlersRunning.Wait()
 			l.Info("Main application: Signal handler stopped")
+			/*
+				Stop capture statistics
+			*/
+			l.Info("Main application: Stopping capture statistics...")
+			doneCaptureStats <- true
+			wgCaptureStatsRunning.Wait()
+			l.Info("Main application: Capture statistics stopped")
+			/*
+				Log final statistics
+			*/
+			stats, _ := handle.Stats()
+			received := uint64(stats.PacketsReceived)
+			dropped := uint64(stats.PacketsDropped)
+			ifDropped := uint64(stats.PacketsIfDropped)
+			if dropped == 0 && ifDropped == 0 {
+				l.Infof("Main application: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+			} else {
+				l.Warnf("Main application: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+			}
 			/*
 				Application is now stopped
 			*/
@@ -160,13 +188,19 @@ func handleSignals(s <-chan os.Signal, d chan<- bool, l *zap.SugaredLogger) {
 	}
 }
 
-func captureStats(handle *pcap.Handle, interval time.Duration, l *zap.SugaredLogger) {
+func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l *zap.SugaredLogger) {
 	/*
 		Log the capture statistics
 	*/
+	defer wgCaptureStatsRunning.Done()
 	ticker := time.NewTicker(interval)
+	l.Debug("Capture statistics: running")
+	wgCaptureStatsPending.Done()
 	for {
 		select {
+		case _ = <-d:
+			l.Debug("Capture statistics: Stopping...")
+			return
 		case _ = <-ticker.C:
 			stats, _ := handle.Stats()
 			received := uint64(stats.PacketsReceived)
