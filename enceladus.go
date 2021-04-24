@@ -26,17 +26,20 @@ var (
 	*/
 	wgSignalsHandlersPending = sync.WaitGroup{}
 	wgCaptureStatsPending    = sync.WaitGroup{}
+	wgPacketHandlerPending   = sync.WaitGroup{}
 	/*
 		Wait groups used to synchronize stopping processes
 	*/
 	wgSignalsHandlersRunning = sync.WaitGroup{}
 	wgCaptureStatsRunning    = sync.WaitGroup{}
+	wgPacketHandlerRunning   = sync.WaitGroup{}
 	/*
 		Channels used to synchronize processes activity
 	*/
-	signals          = make(chan os.Signal, 1)
-	doneSignal       = make(chan bool, 1)
-	doneCaptureStats = make(chan bool, 1)
+	signals            = make(chan os.Signal, 1)
+	doneSignal         = make(chan bool, 1)
+	doneCaptureStats   = make(chan bool, 1)
+	donePacketHandling = make(chan bool, 1)
 	/*
 		Capture configuration
 	*/
@@ -94,7 +97,17 @@ func main() {
 	wgCaptureStatsRunning.Add(1)
 	go captureStats(doneCaptureStats, handle, conf.statsInterval, l)
 	wgCaptureStatsPending.Wait()
-	l.Debug("Application: Capture statistics stopped")
+	l.Debug("Application: Capture statistics started")
+	/*
+		Starting packet handler
+	*/
+	l.Debug("Application: starting packet handling")
+	wgPacketHandlerPending.Add(1)
+	wgPacketHandlerRunning.Add(1)
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	packetChannel := packetSource.Packets()
+	go handlePacket(packetChannel, donePacketHandling, l)
+	wgPacketHandlerPending.Wait()
 	/*
 		Application is now running
 	*/
@@ -119,6 +132,13 @@ func main() {
 			doneCaptureStats <- true
 			wgCaptureStatsRunning.Wait()
 			l.Info("Main application: Capture statistics stopped")
+			/*
+				Stopping packet handler
+			*/
+			l.Info("Main application: Stopping packet handler...")
+			donePacketHandling <- true
+			wgPacketHandlerRunning.Wait()
+			l.Info("Main application: Packet handler stopped")
 			/*
 				Log final statistics
 			*/
@@ -217,11 +237,17 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 	}
 }
 
-func handlePacket(packets <-chan gopacket.Packet) {
+func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger) {
+	defer wgPacketHandlerRunning.Done()
+	l.Debug("Packet handling: running")
+	wgPacketHandlerPending.Done()
 	for {
 		select {
-		case _ = <-packets:
-			runtime.Gosched()
+		case _ = <-d:
+			l.Debug("Packet handling: Stopping...")
+			return
+		case packet := <-p:
+			l.Debugf("Packet handling: Received %v", packet)
 		default:
 			runtime.Gosched()
 		}
