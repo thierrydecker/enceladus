@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 	"os/signal"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -18,6 +18,7 @@ type snifferConfig struct {
 	snapLength    int32
 	timeout       time.Duration
 	statsInterval time.Duration
+	ttlInterval   time.Duration
 }
 
 var (
@@ -26,17 +27,20 @@ var (
 	*/
 	wgSignalsHandlersPending = sync.WaitGroup{}
 	wgCaptureStatsPending    = sync.WaitGroup{}
+	wgPacketHandlerPending   = sync.WaitGroup{}
 	/*
 		Wait groups used to synchronize stopping processes
 	*/
 	wgSignalsHandlersRunning = sync.WaitGroup{}
 	wgCaptureStatsRunning    = sync.WaitGroup{}
+	wgPacketHandlerRunning   = sync.WaitGroup{}
 	/*
 		Channels used to synchronize processes activity
 	*/
-	signals          = make(chan os.Signal, 1)
-	doneSignal       = make(chan bool, 1)
-	doneCaptureStats = make(chan bool, 1)
+	signals            = make(chan os.Signal, 1)
+	doneSignal         = make(chan bool, 1)
+	doneCaptureStats   = make(chan bool, 1)
+	donePacketHandling = make(chan bool, 1)
 	/*
 		Capture configuration
 	*/
@@ -44,7 +48,8 @@ var (
 		deviceName:    "\\Device\\NPF_{E9D609AF-F749-4AFD-83CF-FADD7F780699}",
 		snapLength:    1600,
 		timeout:       pcap.BlockForever,
-		statsInterval: 30 * time.Second,
+		statsInterval: 60 * time.Second,
+		ttlInterval:   100 * time.Nanosecond,
 	}
 )
 
@@ -94,7 +99,17 @@ func main() {
 	wgCaptureStatsRunning.Add(1)
 	go captureStats(doneCaptureStats, handle, conf.statsInterval, l)
 	wgCaptureStatsPending.Wait()
-	l.Debug("Application: Capture statistics stopped")
+	l.Debug("Application: Capture statistics started")
+	/*
+		Starting packet handler
+	*/
+	l.Debug("Application: starting packet handling")
+	wgPacketHandlerPending.Add(1)
+	wgPacketHandlerRunning.Add(1)
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	packetChannel := packetSource.Packets()
+	go handlePacket(packetChannel, donePacketHandling, l)
+	wgPacketHandlerPending.Wait()
 	/*
 		Application is now running
 	*/
@@ -120,6 +135,13 @@ func main() {
 			wgCaptureStatsRunning.Wait()
 			l.Info("Main application: Capture statistics stopped")
 			/*
+				Stopping packet handler
+			*/
+			l.Info("Main application: Stopping packet handler...")
+			donePacketHandling <- true
+			wgPacketHandlerRunning.Wait()
+			l.Info("Main application: Packet handler stopped")
+			/*
 				Log final statistics
 			*/
 			stats, _ := handle.Stats()
@@ -137,7 +159,7 @@ func main() {
 			l.Info("Main application: Stopped")
 			return
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 
@@ -149,7 +171,7 @@ func applicationLogger() (*zap.SugaredLogger, error) {
 	*/
 	config := zap.Config{
 		Encoding:         "console",
-		Level:            zap.NewAtomicLevelAt(zapcore.DebugLevel),
+		Level:            zap.NewAtomicLevelAt(zapcore.InfoLevel),
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stdout"},
 		EncoderConfig: zapcore.EncoderConfig{
@@ -183,7 +205,7 @@ func handleSignals(s <-chan os.Signal, d chan<- bool, l *zap.SugaredLogger) {
 			d <- true
 			return
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 }
@@ -212,18 +234,33 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 				l.Warnf("Statistics: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
 			}
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 }
 
-func handlePacket(packets <-chan gopacket.Packet) {
+func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger) {
+	defer wgPacketHandlerRunning.Done()
+	l.Debug("Packet handling: running")
+	wgPacketHandlerPending.Done()
 	for {
 		select {
-		case _ = <-packets:
-			runtime.Gosched()
+		case _ = <-d:
+			l.Debug("Packet handling: Stopping...")
+			return
+		case packet := <-p:
+			ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+			if ethernetLayer != nil {
+				ethernet, _ := ethernetLayer.(*layers.Ethernet)
+				src := ethernet.SrcMAC
+				dst := ethernet.SrcMAC
+				typ := ethernet.EthernetType
+				l.Debugf("Packet handling: Received Ethernet frame, src: %v, dst: %v, type: %v", src, dst, typ)
+			} else {
+				l.Warn("Packet handling: Received unknown frame")
+			}
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 }
