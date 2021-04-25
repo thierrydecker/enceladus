@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 	"os/signal"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -18,6 +18,7 @@ type snifferConfig struct {
 	snapLength    int32
 	timeout       time.Duration
 	statsInterval time.Duration
+	ttlInterval   time.Duration
 }
 
 var (
@@ -47,7 +48,8 @@ var (
 		deviceName:    "\\Device\\NPF_{E9D609AF-F749-4AFD-83CF-FADD7F780699}",
 		snapLength:    1600,
 		timeout:       pcap.BlockForever,
-		statsInterval: 30 * time.Second,
+		statsInterval: 60 * time.Second,
+		ttlInterval:   100 * time.Nanosecond,
 	}
 )
 
@@ -157,7 +159,7 @@ func main() {
 			l.Info("Main application: Stopped")
 			return
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 
@@ -169,7 +171,7 @@ func applicationLogger() (*zap.SugaredLogger, error) {
 	*/
 	config := zap.Config{
 		Encoding:         "console",
-		Level:            zap.NewAtomicLevelAt(zapcore.DebugLevel),
+		Level:            zap.NewAtomicLevelAt(zapcore.InfoLevel),
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stdout"},
 		EncoderConfig: zapcore.EncoderConfig{
@@ -203,7 +205,7 @@ func handleSignals(s <-chan os.Signal, d chan<- bool, l *zap.SugaredLogger) {
 			d <- true
 			return
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 }
@@ -232,7 +234,7 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 				l.Warnf("Statistics: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
 			}
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 }
@@ -247,9 +249,18 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 			l.Debug("Packet handling: Stopping...")
 			return
 		case packet := <-p:
-			l.Debugf("Packet handling: Received %v", packet)
+			ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+			if ethernetLayer != nil {
+				ethernet, _ := ethernetLayer.(*layers.Ethernet)
+				src := ethernet.SrcMAC
+				dst := ethernet.SrcMAC
+				typ := ethernet.EthernetType
+				l.Debugf("Packet handling: Received Ethernet frame, src: %v, dst: %v, type: %v", src, dst, typ)
+			} else {
+				l.Warn("Packet handling: Received unknown frame")
+			}
 		default:
-			runtime.Gosched()
+			time.Sleep(conf.ttlInterval)
 		}
 	}
 }
