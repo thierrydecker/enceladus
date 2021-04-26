@@ -85,7 +85,7 @@ func main() {
 	/*
 		Starting signal handler
 	*/
-	l.Debug("Application: starting signal handlers")
+	l.Debug("Main application: starting signal handlers")
 	wgSignalsHandlersPending.Add(1)
 	wgSignalsHandlersRunning.Add(1)
 	go handleSignals(signals, doneSignal, l)
@@ -94,16 +94,16 @@ func main() {
 	/*
 		Starting capture statistics
 	*/
-	l.Debug("Application: starting capture statistics")
+	l.Debug("Main application: starting capture statistics")
 	wgCaptureStatsPending.Add(1)
 	wgCaptureStatsRunning.Add(1)
 	go captureStats(doneCaptureStats, handle, conf.statsInterval, l)
 	wgCaptureStatsPending.Wait()
-	l.Debug("Application: Capture statistics started")
+	l.Debug("Main application: Capture statistics started")
 	/*
 		Starting packet handler
 	*/
-	l.Debug("Application: starting packet handling")
+	l.Debug("Main application: starting packet handling")
 	wgPacketHandlerPending.Add(1)
 	wgPacketHandlerRunning.Add(1)
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
