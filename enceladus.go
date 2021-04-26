@@ -90,7 +90,7 @@ func main() {
 	wgSignalsHandlersRunning.Add(1)
 	go handleSignals(signals, doneSignal, l)
 	wgSignalsHandlersPending.Wait()
-	l.Info("Application: Signal handler started")
+	l.Info("Main application: Signal handler started")
 	/*
 		Starting capture statistics
 	*/
@@ -249,15 +249,23 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 			l.Debug("Packet handling: Stopping...")
 			return
 		case packet := <-p:
+			/*
+				Common packet infos
+			*/
+			timestamp := packet.Metadata().Timestamp
+			length := len(packet.Data())
+			/*
+				Decode ethernet layer if present
+			*/
 			ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
 			if ethernetLayer != nil {
 				ethernet, _ := ethernetLayer.(*layers.Ethernet)
 				src := ethernet.SrcMAC
 				dst := ethernet.SrcMAC
 				typ := ethernet.EthernetType
-				l.Debugf("Packet handling: Received Ethernet frame, src: %v, dst: %v, type: %v", src, dst, typ)
+				l.Debugf("Packet handling: Received Ethernet frame, timeStamp: %v, length: %v, SrcMac: %v, DstMac: %v, EthernetType: %v", timestamp, length, src, dst, typ)
 			} else {
-				l.Warn("Packet handling: Received unknown frame")
+				l.Warnf("Packet handling: Received unknown message,timeStamp: %v, length: %v", timestamp, length)
 			}
 		default:
 			time.Sleep(conf.ttlInterval)
