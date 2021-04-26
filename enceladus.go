@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"time"
 
@@ -68,7 +67,7 @@ var (
 	confDb = influxConfig{
 		bucket: "enceladus",
 		org:    "Enceladus",
-		token:  "4AHWdftf-W903-089UmXl2N4eA41gBlmYJPU-EjaG2e0qu_fQHxRWVhFkinyETQD3XmUG3mRKyzYapCt-OcfGQ==",
+		token:  "ngqTyxbvTtfTKiL7UjjPXNRo33ubL8oP0RLdHsIi7T9st6XEoppL_BUZjjsEzvC6ukNnZXoIGwvutIdwXsRENQ==",
 		url:    "http://192.168.1.125:8086",
 		agent:  "tdecker",
 	}
@@ -183,7 +182,6 @@ func main() {
 			time.Sleep(conf.ttlInterval)
 		}
 	}
-
 }
 
 func applicationLogger() (*zap.SugaredLogger, error) {
@@ -316,12 +314,11 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 				/*
 					Send data to InfluxDb
 				*/
-
 				point := influxdb2.NewPoint(
 					"Ethernet",
 					map[string]string{
 						"agent":        confDb.agent,
-						"ethernetType": strconv.Itoa(int(ethernetType)),
+						"ethernetType": ethernetType.String(),
 					},
 					map[string]interface{}{
 						"srcMac":       srcMac,
