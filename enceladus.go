@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -20,6 +22,14 @@ type snifferConfig struct {
 	timeout       time.Duration
 	statsInterval time.Duration
 	ttlInterval   time.Duration
+}
+
+type influxConfig struct {
+	bucket string
+	org    string
+	token  string
+	url    string
+	agent  string
 }
 
 var (
@@ -51,6 +61,16 @@ var (
 		timeout:       pcap.BlockForever,
 		statsInterval: 60 * time.Second,
 		ttlInterval:   100 * time.Nanosecond,
+	}
+	/*
+		InfluxDb configuration
+	*/
+	confDb = influxConfig{
+		bucket: "enceladus",
+		org:    "Enceladus",
+		token:  "4AHWdftf-W903-089UmXl2N4eA41gBlmYJPU-EjaG2e0qu_fQHxRWVhFkinyETQD3XmUG3mRKyzYapCt-OcfGQ==",
+		url:    "http://192.168.1.125:8086",
+		agent:  "tdecker",
 	}
 )
 
@@ -243,6 +263,25 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger) {
 	defer wgPacketHandlerRunning.Done()
 	l.Debug("Packet handling: running")
+	/*
+		Create InfluxDb client
+	*/
+	client := influxdb2.NewClientWithOptions(
+		confDb.url,
+		confDb.token,
+		influxdb2.DefaultOptions().
+			SetBatchSize(100).
+			SetFlushInterval(10000),
+	)
+	writeAPI := client.WriteAPI(confDb.org, confDb.bucket)
+	errorsCh := writeAPI.Errors()
+	go func(l *zap.SugaredLogger) {
+		for err := range errorsCh {
+			l.Errorf("Packet handling: Write to InfluxDb Error %v", err)
+		}
+	}(l)
+	defer client.Close()
+	defer writeAPI.Flush()
 	wgPacketHandlerPending.Done()
 	for {
 		select {
@@ -274,6 +313,24 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 				msg += fmt.Sprintf("dstMac: %v, ", dstMac)
 				msg += fmt.Sprintf("ethernetType: %v", ethernetType)
 				l.Debug(msg)
+				/*
+					Send data to InfluxDb
+				*/
+
+				point := influxdb2.NewPoint(
+					"Ethernet",
+					map[string]string{
+						"agent":        confDb.agent,
+						"ethernetType": strconv.Itoa(int(ethernetType)),
+					},
+					map[string]interface{}{
+						"srcMac":       srcMac,
+						"srcDst":       dstMac,
+						"packetLength": packetLength,
+					},
+					packetTimestamp,
+				)
+				writeAPI.WritePoint(point)
 			} else {
 				msg := "Packet handling: Received unknown message, "
 				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
