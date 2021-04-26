@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -85,25 +86,25 @@ func main() {
 	/*
 		Starting signal handler
 	*/
-	l.Debug("Application: starting signal handlers")
+	l.Debug("Main application: starting signal handlers")
 	wgSignalsHandlersPending.Add(1)
 	wgSignalsHandlersRunning.Add(1)
 	go handleSignals(signals, doneSignal, l)
 	wgSignalsHandlersPending.Wait()
-	l.Info("Application: Signal handler started")
+	l.Info("Main application: Signal handler started")
 	/*
 		Starting capture statistics
 	*/
-	l.Debug("Application: starting capture statistics")
+	l.Debug("Main application: starting capture statistics")
 	wgCaptureStatsPending.Add(1)
 	wgCaptureStatsRunning.Add(1)
 	go captureStats(doneCaptureStats, handle, conf.statsInterval, l)
 	wgCaptureStatsPending.Wait()
-	l.Debug("Application: Capture statistics started")
+	l.Debug("Main application: Capture statistics started")
 	/*
 		Starting packet handler
 	*/
-	l.Debug("Application: starting packet handling")
+	l.Debug("Main application: starting packet handling")
 	wgPacketHandlerPending.Add(1)
 	wgPacketHandlerRunning.Add(1)
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
@@ -249,15 +250,35 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 			l.Debug("Packet handling: Stopping...")
 			return
 		case packet := <-p:
+			/*
+				Common fields
+			*/
+			packetTimestamp := packet.Metadata().Timestamp
+			packetLength := len(packet.Data())
+			/*
+				Decode ethernet layer if present
+			*/
 			ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
 			if ethernetLayer != nil {
+				/*
+					Ethernet fields
+				*/
 				ethernet, _ := ethernetLayer.(*layers.Ethernet)
-				src := ethernet.SrcMAC
-				dst := ethernet.SrcMAC
-				typ := ethernet.EthernetType
-				l.Debugf("Packet handling: Received Ethernet frame, src: %v, dst: %v, type: %v", src, dst, typ)
+				srcMac := ethernet.SrcMAC
+				dstMac := ethernet.SrcMAC
+				ethernetType := ethernet.EthernetType
+				msg := "Packet handling: Received Ethernet frame, "
+				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
+				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
+				msg += fmt.Sprintf("srcMac: %v, ", srcMac)
+				msg += fmt.Sprintf("dstMac: %v, ", dstMac)
+				msg += fmt.Sprintf("ethernetType: %v", ethernetType)
+				l.Debug(msg)
 			} else {
-				l.Warn("Packet handling: Received unknown frame")
+				msg := "Packet handling: Received unknown message, "
+				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
+				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
+				l.Warn(msg)
 			}
 		default:
 			time.Sleep(conf.ttlInterval)
