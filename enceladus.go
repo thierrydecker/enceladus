@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -250,22 +251,34 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 			return
 		case packet := <-p:
 			/*
-				Common packet infos
+				Common fields
 			*/
-			timestamp := packet.Metadata().Timestamp
-			length := len(packet.Data())
+			packetTimestamp := packet.Metadata().Timestamp
+			packetLength := len(packet.Data())
 			/*
 				Decode ethernet layer if present
 			*/
 			ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
 			if ethernetLayer != nil {
+				/*
+					Ethernet fields
+				*/
 				ethernet, _ := ethernetLayer.(*layers.Ethernet)
-				src := ethernet.SrcMAC
-				dst := ethernet.SrcMAC
-				typ := ethernet.EthernetType
-				l.Debugf("Packet handling: Received Ethernet frame, timeStamp: %v, length: %v, SrcMac: %v, DstMac: %v, EthernetType: %v", timestamp, length, src, dst, typ)
+				srcMac := ethernet.SrcMAC
+				dstMac := ethernet.SrcMAC
+				ethernetType := ethernet.EthernetType
+				msg := "Packet handling: Received Ethernet frame, "
+				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
+				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
+				msg += fmt.Sprintf("srcMac: %v, ", srcMac)
+				msg += fmt.Sprintf("dstMac: %v, ", dstMac)
+				msg += fmt.Sprintf("ethernetType: %v", ethernetType)
+				l.Debug(msg)
 			} else {
-				l.Warnf("Packet handling: Received unknown message,timeStamp: %v, length: %v", timestamp, length)
+				msg := "Packet handling: Received unknown message, "
+				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
+				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
+				l.Warn(msg)
 			}
 		default:
 			time.Sleep(conf.ttlInterval)
