@@ -68,9 +68,13 @@ var (
 		bucket: "enceladus",
 		org:    "Enceladus",
 		token:  "ngqTyxbvTtfTKiL7UjjPXNRo33ubL8oP0RLdHsIi7T9st6XEoppL_BUZjjsEzvC6ukNnZXoIGwvutIdwXsRENQ==",
-		url:    "http://192.168.1.125:8086",
+		url:    "http://192.168.56.102:8086",
 		agent:  "tdecker",
 	}
+	/*
+		Packet handlers
+	*/
+	packetHandlersCount = 150
 )
 
 func main() {
@@ -123,12 +127,14 @@ func main() {
 	/*
 		Starting packet handler
 	*/
-	l.Debug("Main application: starting packet handling")
-	wgPacketHandlerPending.Add(1)
-	wgPacketHandlerRunning.Add(1)
+	l.Debug("Main application: starting packet handlers")
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	packetChannel := packetSource.Packets()
-	go handlePacket(packetChannel, donePacketHandling, l)
+	for i := 0; i < packetHandlersCount; i++ {
+		wgPacketHandlerPending.Add(1)
+		wgPacketHandlerRunning.Add(1)
+		go handlePacket(packetChannel, donePacketHandling, l, i+1)
+	}
 	wgPacketHandlerPending.Wait()
 	/*
 		Application is now running
@@ -157,10 +163,12 @@ func main() {
 			/*
 				Stopping packet handler
 			*/
-			l.Info("Main application: Stopping packet handler...")
-			donePacketHandling <- true
+			l.Info("Main application: Stopping packets handler...")
+			for i := 0; i < packetHandlersCount; i++ {
+				donePacketHandling <- true
+			}
 			wgPacketHandlerRunning.Wait()
-			l.Info("Main application: Packet handler stopped")
+			l.Info("Main application: Packet handlers stopped")
 			/*
 				Log final statistics
 			*/
@@ -258,9 +266,9 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 	}
 }
 
-func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger) {
+func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger, n int) {
 	defer wgPacketHandlerRunning.Done()
-	l.Debug("Packet handling: running")
+	l.Debugf("Packet handling %v: running", n)
 	/*
 		Create InfluxDb client
 	*/
@@ -268,14 +276,14 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 		confDb.url,
 		confDb.token,
 		influxdb2.DefaultOptions().
-			SetBatchSize(100).
-			SetFlushInterval(10000),
+			SetBatchSize(100000).
+			SetFlushInterval(250),
 	)
 	writeAPI := client.WriteAPI(confDb.org, confDb.bucket)
 	errorsCh := writeAPI.Errors()
 	go func(l *zap.SugaredLogger) {
 		for err := range errorsCh {
-			l.Errorf("Packet handling: Write to InfluxDb Error %v", err)
+			l.Errorf("Packet handling %v: Write to InfluxDb Error %v", n, err)
 		}
 	}(l)
 	defer client.Close()
@@ -284,7 +292,7 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 	for {
 		select {
 		case _ = <-d:
-			l.Debug("Packet handling: Stopping...")
+			l.Debugf("Packet handling %v: Stopping...", n)
 			return
 		case packet := <-p:
 			/*
@@ -304,7 +312,7 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 				srcMac := ethernet.SrcMAC
 				dstMac := ethernet.SrcMAC
 				ethernetType := ethernet.EthernetType
-				msg := "Packet handling: Received Ethernet frame, "
+				msg := fmt.Sprintf("Packet handling %v: Received Ethernet frame, ", n)
 				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
 				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
 				msg += fmt.Sprintf("srcMac: %v, ", srcMac)
@@ -329,7 +337,7 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger)
 				)
 				writeAPI.WritePoint(point)
 			} else {
-				msg := "Packet handling: Received unknown message, "
+				msg := fmt.Sprintf("Packet handling %v: Received unknown message, ", n)
 				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
 				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
 				l.Warn(msg)
