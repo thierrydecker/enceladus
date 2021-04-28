@@ -34,6 +34,10 @@ type influxConfig struct {
 
 var (
 	/*
+		Packet handlers
+	*/
+	packetHandlersCount = 100
+	/*
 		Wait groups used to synchronize starting processes
 	*/
 	wgSignalsHandlersPending = sync.WaitGroup{}
@@ -51,7 +55,7 @@ var (
 	signals            = make(chan os.Signal, 1)
 	doneSignal         = make(chan bool, 1)
 	doneCaptureStats   = make(chan bool, 1)
-	donePacketHandling = make(chan bool, 1)
+	donePacketHandling = make(chan bool, packetHandlersCount)
 	/*
 		Capture configuration
 	*/
@@ -72,10 +76,6 @@ var (
 		url:    "http://192.168.56.102:8086",
 		agent:  "tdecker",
 	}
-	/*
-		Packet handlers
-	*/
-	packetHandlersCount = 150
 )
 
 func main() {
