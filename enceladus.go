@@ -298,7 +298,7 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 			/*
 				Common fields
 			*/
-			packetTimestamp := packet.Metadata().Timestamp
+			packetTimestamp := time.Now()
 			packetLength := len(packet.Data())
 			/*
 				Decode ethernet layer if present
