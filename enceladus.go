@@ -11,6 +11,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/influxdata/influxdb-client-go/v2/log"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -277,8 +278,13 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 		confDb.token,
 		influxdb2.DefaultOptions().
 			SetBatchSize(100000).
-			SetFlushInterval(250),
+			SetFlushInterval(250).
+			SetPrecision(time.Nanosecond),
 	)
+	/*
+		Disable InfluxDb logging
+	*/
+	log.Log = nil
 	writeAPI := client.WriteAPI(confDb.org, confDb.bucket)
 	errorsCh := writeAPI.Errors()
 	go func(l *zap.SugaredLogger) {
