@@ -29,6 +29,16 @@ func main() {
 		}
 	}(l)
 	defer l.Debugf("Main application: flushing logger buffers...")
+	hwAddress, err := getHWAddress(conf.deviceAlias)
+	if err != nil {
+		panic(err)
+	}
+	if hwAddress == "" {
+		l.Warnf("Main application: hardware address not found for device %v", conf.deviceAlias)
+		return
+	}
+	conf.deviceHWAddress = hwAddress
+	l.Infof("Main application: hardware address device %v", conf.deviceHWAddress)
 	/*
 		Setup capture
 	*/
