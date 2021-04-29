@@ -5,12 +5,13 @@ import (
 )
 
 type snifferConfig struct {
-	deviceName    string
-	deviceAlias   string
-	snapLength    int32
-	timeout       time.Duration
-	statsInterval time.Duration
-	ttlInterval   time.Duration
+	deviceName      string // Used for opening live capture
+	deviceAlias     string // Used for retrieving hardware address of the device
+	deviceHWAddress string
+	snapLength      int32
+	timeout         time.Duration
+	statsInterval   time.Duration
+	ttlInterval     time.Duration
 }
 
 type influxConfig struct {

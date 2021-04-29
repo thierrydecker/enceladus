@@ -58,13 +58,21 @@ func decodePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 				*/
 				ethernet, _ := ethernetLayer.(*layers.Ethernet)
 				srcMac := ethernet.SrcMAC
-				dstMac := ethernet.SrcMAC
+				dstMac := ethernet.DstMAC
+				direction := "Promiscious"
+				switch {
+				case conf.deviceHWAddress == srcMac.String():
+					direction = "out"
+				case conf.deviceHWAddress == dstMac.String():
+					direction = "in"
+				}
 				ethernetType := ethernet.EthernetType
 				msg := fmt.Sprintf("Packet decoding %v: Received Ethernet frame, ", n)
 				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
 				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
 				msg += fmt.Sprintf("srcMac: %v, ", srcMac)
 				msg += fmt.Sprintf("dstMac: %v, ", dstMac)
+				msg += fmt.Sprintf("direction: %v, ", direction)
 				msg += fmt.Sprintf("ethernetType: %v", ethernetType)
 				l.Debug(msg)
 				/*
@@ -76,10 +84,11 @@ func decodePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 						"agent":        confDb.agent,
 						"device":       conf.deviceAlias,
 						"ethernetType": ethernetType.String(),
+						"direction":    direction,
 					},
 					map[string]interface{}{
 						"srcMac":       srcMac,
-						"srcDst":       dstMac,
+						"dstMac":       dstMac,
 						"packetLength": packetLength,
 					},
 					packetTimestamp,
