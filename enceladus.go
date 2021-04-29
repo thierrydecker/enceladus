@@ -236,9 +236,11 @@ func main() {
 			droppedPercent := (float64(dropped) / float64(received)) * 100
 			ifDropped := uint64(stats.PacketsIfDropped)
 			if dropped == 0 && ifDropped == 0 {
-				l.Infof("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
+				l.Infof("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped,
+					droppedPercent, ifDropped)
 			} else {
-				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
+				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped,
+					droppedPercent, ifDropped)
 			}
 			return
 		default:
@@ -312,9 +314,11 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 			droppedPercent := (float64(dropped) / float64(received)) * 100
 			ifDropped := uint64(stats.PacketsIfDropped)
 			if dropped == 0 && ifDropped == 0 {
-				l.Infof("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
+				l.Infof("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped,
+					droppedPercent, ifDropped)
 			} else {
-				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
+				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped,
+					droppedPercent, ifDropped)
 			}
 		default:
 			time.Sleep(conf.ttlInterval)
