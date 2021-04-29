@@ -74,6 +74,7 @@ func decodePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 					"Ethernet",
 					map[string]string{
 						"agent":        confDb.agent,
+						"device":       conf.deviceAlias,
 						"ethernetType": ethernetType.String(),
 					},
 					map[string]interface{}{
