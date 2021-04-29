@@ -34,16 +34,23 @@ type influxConfig struct {
 
 var (
 	/*
+		Workers counts
+	*/
+	packetHandlersCount = 1
+	packetDecodersCount = 5
+	/*
 		Wait groups used to synchronize starting processes
 	*/
 	wgSignalsHandlersPending = sync.WaitGroup{}
 	wgCaptureStatsPending    = sync.WaitGroup{}
+	wgPacketDecoderPending   = sync.WaitGroup{}
 	wgPacketHandlerPending   = sync.WaitGroup{}
 	/*
 		Wait groups used to synchronize stopping processes
 	*/
 	wgSignalsHandlersRunning = sync.WaitGroup{}
 	wgCaptureStatsRunning    = sync.WaitGroup{}
+	wgPacketDecoderRunning   = sync.WaitGroup{}
 	wgPacketHandlerRunning   = sync.WaitGroup{}
 	/*
 		Channels used to synchronize processes activity
@@ -51,7 +58,12 @@ var (
 	signals            = make(chan os.Signal, 1)
 	doneSignal         = make(chan bool, 1)
 	doneCaptureStats   = make(chan bool, 1)
-	donePacketHandling = make(chan bool, 1)
+	donePacketDecoding = make(chan bool, packetDecodersCount)
+	donePacketHandling = make(chan bool, packetHandlersCount)
+	/*
+		Channel for buffering packets coming from pcap
+	*/
+	packetsToDecode = make(chan gopacket.Packet, 2000*packetDecodersCount)
 	/*
 		Capture configuration
 	*/
@@ -72,21 +84,9 @@ var (
 		url:    "http://192.168.56.102:8086",
 		agent:  "tdecker",
 	}
-	/*
-		Packet handlers
-	*/
-	packetHandlersCount = 150
 )
 
 func main() {
-	/*
-		Setup capture
-	*/
-	handle, err := pcap.OpenLive(conf.deviceName, conf.snapLength, false, conf.timeout)
-	if err != nil {
-		panic(err)
-	}
-	defer handle.Close()
 	/*
 		Setup application logger
 	*/
@@ -97,12 +97,48 @@ func main() {
 	/*
 		Flushing Zap buffers
 	*/
+	defer l.Debugf("Main application: logger buffers flushed")
 	defer func(logger *zap.SugaredLogger) {
 		err := logger.Sync()
 		if err != nil {
 			panic(err)
 		}
 	}(l)
+	defer l.Debugf("Main application: flushing logger buffers...")
+	/*
+		Setup capture
+	*/
+	inactive, err := pcap.NewInactiveHandle(conf.deviceName)
+	if err != nil {
+		panic(err)
+	}
+	err = inactive.SetBufferSize(320000000)
+	if err != nil {
+		panic(err)
+	}
+	err = inactive.SetPromisc(false)
+	if err != nil {
+		panic(err)
+	}
+	err = inactive.SetImmediateMode(false)
+	if err != nil {
+		panic(err)
+	}
+	err = inactive.SetSnapLen(int(conf.snapLength))
+	if err != nil {
+		panic(err)
+	}
+	handle, err := inactive.Activate()
+	if err != nil {
+		panic(err)
+	}
+	defer l.Info("Main application: pcap handle cleaned")
+	defer inactive.CleanUp()
+	defer l.Info("Main application: cleaning up pcap handle...")
+
+	defer l.Info("Main application: pcap handle closed")
+	defer handle.Close()
+	defer l.Info("Main application: closing up pcap handle...")
 	/*
 		Relay incoming signals to application
 	*/
@@ -126,6 +162,16 @@ func main() {
 	wgCaptureStatsPending.Wait()
 	l.Debug("Main application: Capture statistics started")
 	/*
+		Starting packet decoder
+	*/
+	l.Debug("Main application: starting packet decoders")
+	for i := 0; i < packetDecodersCount; i++ {
+		wgPacketDecoderPending.Add(1)
+		wgPacketDecoderRunning.Add(1)
+		go decodePacket(packetsToDecode, donePacketDecoding, l, i+1)
+	}
+	wgPacketDecoderPending.Wait()
+	/*
 		Starting packet handler
 	*/
 	l.Debug("Main application: starting packet handlers")
@@ -134,7 +180,7 @@ func main() {
 	for i := 0; i < packetHandlersCount; i++ {
 		wgPacketHandlerPending.Add(1)
 		wgPacketHandlerRunning.Add(1)
-		go handlePacket(packetChannel, donePacketHandling, l, i+1)
+		go handlePacket(packetChannel, packetsToDecode, donePacketHandling, l, i+1)
 	}
 	wgPacketHandlerPending.Wait()
 	/*
@@ -155,13 +201,6 @@ func main() {
 			wgSignalsHandlersRunning.Wait()
 			l.Info("Main application: Signal handler stopped")
 			/*
-				Stop capture statistics
-			*/
-			l.Info("Main application: Stopping capture statistics...")
-			doneCaptureStats <- true
-			wgCaptureStatsRunning.Wait()
-			l.Info("Main application: Capture statistics stopped")
-			/*
 				Stopping packet handler
 			*/
 			l.Info("Main application: Stopping packets handler...")
@@ -170,22 +209,37 @@ func main() {
 			}
 			wgPacketHandlerRunning.Wait()
 			l.Info("Main application: Packet handlers stopped")
+
+			/*
+				Stopping packet decoder
+			*/
+			l.Info("Main application: Stopping packets decoder...")
+			for i := 0; i < packetDecodersCount; i++ {
+				donePacketDecoding <- true
+			}
+			wgPacketDecoderRunning.Wait()
+			l.Info("Main application: Packet decoders stopped")
+
+			/*
+				Stop capture statistics
+			*/
+			l.Info("Main application: Stopping capture statistics...")
+			doneCaptureStats <- true
+			wgCaptureStatsRunning.Wait()
+			l.Info("Main application: Capture statistics stopped")
 			/*
 				Log final statistics
 			*/
 			stats, _ := handle.Stats()
 			received := uint64(stats.PacketsReceived)
 			dropped := uint64(stats.PacketsDropped)
+			droppedPercent := (float64(dropped) / float64(received)) * 100
 			ifDropped := uint64(stats.PacketsIfDropped)
 			if dropped == 0 && ifDropped == 0 {
-				l.Infof("Main application: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+				l.Infof("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
 			} else {
-				l.Warnf("Main application: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
 			}
-			/*
-				Application is now stopped
-			*/
-			l.Info("Main application: Stopped")
 			return
 		default:
 			time.Sleep(conf.ttlInterval)
@@ -255,11 +309,12 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 			stats, _ := handle.Stats()
 			received := uint64(stats.PacketsReceived)
 			dropped := uint64(stats.PacketsDropped)
+			droppedPercent := (float64(dropped) / float64(received)) * 100
 			ifDropped := uint64(stats.PacketsIfDropped)
 			if dropped == 0 && ifDropped == 0 {
-				l.Infof("Statistics: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+				l.Infof("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
 			} else {
-				l.Warnf("Statistics: Received %v, dropped %v and ifdropped %v packets", received, dropped, ifDropped)
+				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped, droppedPercent, ifDropped)
 			}
 		default:
 			time.Sleep(conf.ttlInterval)
@@ -267,9 +322,26 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 	}
 }
 
-func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger, n int) {
+func handlePacket(p <-chan gopacket.Packet, ptc chan<- gopacket.Packet, d <-chan bool, l *zap.SugaredLogger, n int) {
 	defer wgPacketHandlerRunning.Done()
 	l.Debugf("Packet handling %v: running", n)
+	wgPacketHandlerPending.Done()
+	for {
+		select {
+		case _ = <-d:
+			l.Debugf("Packet handling %v: Stopping...", n)
+			return
+		case pkt := <-p:
+			ptc <- pkt
+		default:
+			time.Sleep(conf.ttlInterval)
+		}
+	}
+}
+
+func decodePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger, n int) {
+	defer wgPacketDecoderRunning.Done()
+	l.Debugf("Packet decoding %v: running", n)
 	/*
 		Create InfluxDb client
 	*/
@@ -277,8 +349,6 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 		confDb.url,
 		confDb.token,
 		influxdb2.DefaultOptions().
-			SetBatchSize(100000).
-			SetFlushInterval(250).
 			SetPrecision(time.Nanosecond),
 	)
 	/*
@@ -289,16 +359,16 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 	errorsCh := writeAPI.Errors()
 	go func(l *zap.SugaredLogger) {
 		for err := range errorsCh {
-			l.Errorf("Packet handling %v: Write to InfluxDb Error %v", n, err)
+			l.Errorf("Packet decoding %v: Write to InfluxDb Error %v", n, err)
 		}
 	}(l)
 	defer client.Close()
 	defer writeAPI.Flush()
-	wgPacketHandlerPending.Done()
+	wgPacketDecoderPending.Done()
 	for {
 		select {
 		case _ = <-d:
-			l.Debugf("Packet handling %v: Stopping...", n)
+			l.Debugf("Packet decoding %v: Stopping...", n)
 			return
 		case packet := <-p:
 			/*
@@ -318,7 +388,7 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 				srcMac := ethernet.SrcMAC
 				dstMac := ethernet.SrcMAC
 				ethernetType := ethernet.EthernetType
-				msg := fmt.Sprintf("Packet handling %v: Received Ethernet frame, ", n)
+				msg := fmt.Sprintf("Packet decoding %v: Received Ethernet frame, ", n)
 				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
 				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
 				msg += fmt.Sprintf("srcMac: %v, ", srcMac)
@@ -343,7 +413,7 @@ func handlePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 				)
 				writeAPI.WritePoint(point)
 			} else {
-				msg := fmt.Sprintf("Packet handling %v: Received unknown message, ", n)
+				msg := fmt.Sprintf("Packet decoding %v: Received unknown message, ", n)
 				msg += fmt.Sprintf("timestamp: %v, ", packetTimestamp)
 				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
 				l.Warn(msg)
