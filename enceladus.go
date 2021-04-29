@@ -177,25 +177,6 @@ func main() {
 	}
 }
 
-func handleSignals(s <-chan os.Signal, d chan<- bool, l *zap.SugaredLogger) {
-	/*
-		Signal handling
-	*/
-	defer wgSignalsHandlersRunning.Done()
-	l.Debug("Signal handler: running")
-	wgSignalsHandlersPending.Done()
-	for {
-		select {
-		case s := <-s:
-			l.Debugf("Signal handler: received %v signal", s)
-			d <- true
-			return
-		default:
-			time.Sleep(conf.ttlInterval)
-		}
-	}
-}
-
 func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l *zap.SugaredLogger) {
 	/*
 		Log the capture statistics
