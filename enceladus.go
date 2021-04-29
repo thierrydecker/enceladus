@@ -16,22 +16,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-type snifferConfig struct {
-	deviceName    string
-	snapLength    int32
-	timeout       time.Duration
-	statsInterval time.Duration
-	ttlInterval   time.Duration
-}
-
-type influxConfig struct {
-	bucket string
-	org    string
-	token  string
-	url    string
-	agent  string
-}
-
 var (
 	/*
 		Workers counts
