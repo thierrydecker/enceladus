@@ -46,6 +46,7 @@ var (
 	*/
 	conf = snifferConfig{
 		deviceName:    "\\Device\\NPF_{E9D609AF-F749-4AFD-83CF-FADD7F780699}",
+		deviceAlias:   "Wifi",
 		snapLength:    1600,
 		timeout:       pcap.BlockForever,
 		statsInterval: 60 * time.Second,
@@ -57,7 +58,7 @@ var (
 	confDb = influxConfig{
 		bucket: "enceladus",
 		org:    "Enceladus",
-		token:  "ngqTyxbvTtfTKiL7UjjPXNRo33ubL8oP0RLdHsIi7T9st6XEoppL_BUZjjsEzvC6ukNnZXoIGwvutIdwXsRENQ==",
+		token:  "22uA599OEWY8glANSowAvBmC92BXwbaJLyEIR23XFU23DSci8F7mUWRyVz3nmsgjW2KeemDz6WsDaPLE_37ubA==",
 		url:    "http://192.168.56.102:8086",
 		agent:  "tdecker",
 	}

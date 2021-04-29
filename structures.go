@@ -6,6 +6,7 @@ import (
 
 type snifferConfig struct {
 	deviceName    string
+	deviceAlias   string
 	snapLength    int32
 	timeout       time.Duration
 	statsInterval time.Duration
