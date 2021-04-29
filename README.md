@@ -2,6 +2,8 @@
 
 ## The project
 
+A network analyzer logging traffic statistics to InfluxDb TSDB.
+
 ## The project's name
 
 **Enceladus** (/ɛnˈsɛlədəs/; Greek: Εγκέλαδος) is the sixth-largest moon of Saturn. 
