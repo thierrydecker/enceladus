@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -18,17 +17,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	/*
-		Flushing Zap buffers
-	*/
-	defer l.Debugf("Main application: logger buffers flushed")
-	defer func(logger *zap.SugaredLogger) {
-		err := logger.Sync()
-		if err != nil {
-			panic(err)
-		}
-	}(l)
-	defer l.Debugf("Main application: flushing logger buffers...")
 	hwAddress, err := getHWAddress(conf.deviceAlias)
 	if err != nil {
 		panic(err)
@@ -66,13 +54,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer l.Info("Main application: pcap handle cleaned")
-	defer inactive.CleanUp()
-	defer l.Info("Main application: cleaning up pcap handle...")
-
-	defer l.Info("Main application: pcap handle closed")
-	defer handle.Close()
-	defer l.Info("Main application: closing up pcap handle...")
 	/*
 		Relay incoming signals to application
 	*/
@@ -143,7 +124,6 @@ func main() {
 			}
 			wgPacketHandlerRunning.Wait()
 			l.Info("Main application: Packet handlers stopped")
-
 			/*
 				Stopping packet decoder
 			*/
@@ -153,7 +133,6 @@ func main() {
 			}
 			wgPacketDecoderRunning.Wait()
 			l.Info("Main application: Packet decoders stopped")
-
 			/*
 				Stop capture statistics
 			*/
@@ -176,6 +155,22 @@ func main() {
 				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped,
 					droppedPercent, ifDropped)
 			}
+			/*
+				Clean pcap handle
+			*/
+			l.Info("Main application: cleaning pcap handle...")
+			inactive.CleanUp()
+			l.Info("Main application: pcap handle cleaned")
+			/*
+				Close pcap handle
+			*/
+			l.Info("Main application: closing pcap handle...")
+			handle.Close()
+			l.Info("Main application: pcap handle closed")
+			/*
+				Application stopped
+			*/
+			l.Infof("Main application: stopped")
 			return
 		default:
 			time.Sleep(conf.ttlInterval)
