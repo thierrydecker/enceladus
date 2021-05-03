@@ -100,8 +100,6 @@ func decodePacket(p <-chan gopacket.Packet, d <-chan bool, l *zap.SugaredLogger,
 				msg += fmt.Sprintf("packetLength: %v, ", packetLength)
 				l.Warn(msg)
 			}
-		default:
-			time.Sleep(conf.ttlInterval)
 		}
 	}
 }

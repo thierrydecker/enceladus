@@ -1,8 +1,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/google/gopacket"
 	"go.uber.org/zap"
 )
@@ -18,8 +16,6 @@ func handlePacket(p <-chan gopacket.Packet, ptc chan<- gopacket.Packet, d <-chan
 			return
 		case pkt := <-p:
 			ptc <- pkt
-		default:
-			time.Sleep(conf.ttlInterval)
 		}
 	}
 }

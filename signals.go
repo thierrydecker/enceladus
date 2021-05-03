@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -20,8 +19,6 @@ func handleSignals(s <-chan os.Signal, d chan<- bool, l *zap.SugaredLogger) {
 			l.Debugf("Signal handler: received %v signal", s)
 			d <- true
 			return
-		default:
-			time.Sleep(conf.ttlInterval)
 		}
 	}
 }

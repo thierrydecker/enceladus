@@ -50,7 +50,6 @@ var (
 		snapLength:    1600,
 		timeout:       pcap.BlockForever,
 		statsInterval: 60 * time.Second,
-		ttlInterval:   100 * time.Nanosecond,
 	}
 	/*
 		InfluxDb configuration
