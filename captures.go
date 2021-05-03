@@ -33,8 +33,6 @@ func captureStats(d <-chan bool, handle *pcap.Handle, interval time.Duration, l 
 				l.Warnf("Statistics: Received %v, dropped %v (%.3f %%) and ifdropped %v packets", received, dropped,
 					droppedPercent, ifDropped)
 			}
-		default:
-			time.Sleep(conf.ttlInterval)
 		}
 	}
 }

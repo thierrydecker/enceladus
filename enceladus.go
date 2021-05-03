@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
@@ -172,8 +171,6 @@ func main() {
 			*/
 			l.Infof("Main application: stopped")
 			return
-		default:
-			time.Sleep(conf.ttlInterval)
 		}
 	}
 }
