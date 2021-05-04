@@ -1,0 +1,5 @@
+agent:
+  name: tdecker
+  device:
+    name: enp0s3
+    alias: enp0s3
