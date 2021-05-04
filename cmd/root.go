@@ -17,14 +17,9 @@ var rootCmd = &cobra.Command{
 		rootCmd represents the base command when called without any subcommands
 	*/
 	Use:   "enceladus",
-	Short: "A brief description of your application",
+	Short: "Enceladus network analyzer",
 	Long: `
-		A longer description that spans multiple lines and likely contains
-		examples and usage of using your application. For example:
-
-		Cobra is a CLI library for Go that empowers applications.
-		This application is a tool to generate the needed files
-		to quickly create a Cobra application.
+Enceladus is a network analyzer using InfluxDB as storage backend 
 	`,
 	Run: func(cmd *cobra.Command, args []string) {},
 }
@@ -44,12 +39,12 @@ func init() {
 		Cobra supports persistent flags, which, if defined here,
 		will be global for your application.
 	*/
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.enceladus.yaml)")
+	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.enceladus.yaml)")
 	/*
 		Cobra also supports local flags, which will only run
 		when this action is called directly.
 	*/
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 func initConfig() {
