@@ -8,7 +8,7 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
-func run() {
+func Run() {
 	/*
 		Setup application logger
 	*/
