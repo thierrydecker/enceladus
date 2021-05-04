@@ -1,4 +1,4 @@
-package main
+package run
 
 import (
 	"os"
@@ -8,7 +8,7 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
-func main() {
+func server() {
 	/*
 		Setup application logger
 	*/
